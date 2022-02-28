@@ -13,6 +13,8 @@ conda activate comet-ray-tune
 
 ## 2. Run the Setup Helper Script
 
+**Note:** This helper script has been tested on `Ubuntu 16.04`
+
 The helper script, `setup.sh` will install Ray in the virtual environment using Python wheels and symlink the `tune` library to the latest version present in the `master` branch of the `ray` repository. This is a tempororary workaround until the next offical `ray` release on PyPi.
 
 ```
