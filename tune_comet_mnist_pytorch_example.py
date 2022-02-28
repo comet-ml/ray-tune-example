@@ -109,7 +109,7 @@ def get_data_loaders():
 
 
 def train_mnist(config):
-    epochs = 10
+    epochs = 20
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     train_loader, test_loader = get_data_loaders()
@@ -162,7 +162,7 @@ if __name__ == "__main__":
         ray.init()
 
     # Create the Comet Logger and add tags to the tune runs to organize the experiments.
-    logger = CometLogger(log_env_cpu=True, tags=["my-sweep"])
+    logger = CometLogger(log_env_cpu=True, log_env_gpu=True, tags=["my-sweep"])
     analysis = tune.run(
         train_mnist,
         local_dir="./results",
