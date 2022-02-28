@@ -1,5 +1,6 @@
 comet_ml
 psutil
+pynvml
 torch
 torchvision
 pandas
