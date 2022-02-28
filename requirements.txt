@@ -1,0 +1,6 @@
+comet_ml
+psutil
+torch
+torchvision
+pandas
+tabulate
