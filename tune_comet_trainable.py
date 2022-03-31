@@ -110,9 +110,7 @@ def get_data_loaders():
 # __trainable_example_begin__
 class TrainMNIST(tune.Trainable):
     def setup(self, config):
-        self.experiment = comet_ml.Experiment(
-            auto_param_logging=False, auto_metric_logging=False, parse_args=True
-        )
+        self.experiment = comet_ml.Experiment(parse_args=False)
 
         self.experiment.log_parameters(config)
         self.experiment.add_tag("tune-trainable")

@@ -94,9 +94,7 @@ def get_data_loaders():
 
 
 def train_mnist(config):
-    experiment = comet_ml.Experiment(
-        auto_param_logging=False, auto_metric_logging=False, parse_args=True
-    )
+    experiment = comet_ml.Experiment(parse_args=False)
     experiment.log_parameters(config)
     experiment.add_tags(["tune-functional"])
 

@@ -163,7 +163,10 @@ if __name__ == "__main__":
 
     # Create the Comet Logger and add tags to the tune runs to organize the experiments.
     logger = CometLogger(
-        log_env_cpu=True, log_env_gpu=True, tags=["tune-logger-callback"]
+        log_env_cpu=True,
+        log_env_gpu=True,
+        parse_args=False,
+        tags=["tune-logger-callback"],
     )
     analysis = tune.run(
         train_mnist,
