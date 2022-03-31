@@ -1,3 +1,5 @@
+import comet_ml
+
 # Original Code here:
 # https://github.com/pytorch/examples/blob/master/mnist/main.py
 import os
@@ -14,7 +16,6 @@ from torchvision import datasets, transforms
 import ray
 from ray import tune
 from ray.tune.trial import Trial
-from ray.tune.integration.comet import CometLoggerCallback
 
 # Change these values if you want the training to run quicker or slower.
 EPOCH_SIZE = 512
@@ -32,22 +33,6 @@ class ConvNet(nn.Module):
         x = x.view(-1, 192)
         x = self.fc(x)
         return F.log_softmax(x, dim=1)
-
-
-class CometLogger(CometLoggerCallback):
-    """Override Log Trial Save to save checkpoints as assets.
-    This method can be modified to save checkpoints either as models
-    or Artifacts depending on the use case.
-
-    Args:
-        CometLoggerCallback (_type_): _description_
-    """
-
-    def log_trial_save(self, trial: "Trial"):
-        iteration = trial.last_result["training_iteration"]
-        experiment = self._trial_experiments[trial]
-        checkpoint_dir = trial.checkpoint.value
-        experiment.log_asset_folder(checkpoint_dir, step=iteration)
 
 
 def train(model, optimizer, train_loader, device=None):
@@ -109,7 +94,13 @@ def get_data_loaders():
 
 
 def train_mnist(config):
-    epochs = 10
+    experiment = comet_ml.Experiment(
+        auto_param_logging=False, auto_metric_logging=False, parse_args=True
+    )
+    experiment.log_parameters(config)
+    experiment.add_tags(["tune-functional"])
+
+    epochs = 20
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
     train_loader, test_loader = get_data_loaders()
@@ -123,14 +114,18 @@ def train_mnist(config):
         # Use range starting from 1 for step since Ray starts from step 1
         train(model, optimizer, train_loader, device)
         acc = test(model, test_loader, device)
+        experiment.log_metrics({"mean_accuracy": acc}, epoch=epoch)
 
         # Ray recommends calling checkpoint before tune.report
         # to keep checkpoint in sync
         with tune.checkpoint_dir(step=epoch) as checkpoint_dir:
             path = os.path.join(checkpoint_dir, "model.pth")
             torch.save(model.state_dict(), path)
+            experiment.log_asset(path, step=epoch)
 
         tune.report(mean_accuracy=acc)
+
+    experiment.end()
 
 
 if __name__ == "__main__":
@@ -161,8 +156,6 @@ if __name__ == "__main__":
     else:
         ray.init()
 
-    # Create the Comet Logger and add tags to the tune runs to organize the experiments.
-    logger = CometLogger(log_env_cpu=True, tags=["my-sweep"])
     analysis = tune.run(
         train_mnist,
         local_dir="./results",
@@ -170,8 +163,7 @@ if __name__ == "__main__":
         metric="mean_accuracy",
         mode="max",
         name="exp",
-        callbacks=[logger],
-        resources_per_trial={"cpu": 1, "gpu": int(args.cuda)},  # set this for GPUs
+        resources_per_trial={"cpu": 2, "gpu": int(args.cuda)},  # set this for GPUs
         num_samples=1,
         config={
             "lr": tune.grid_search([1e-4, 1e-2]),
