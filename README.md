@@ -13,8 +13,7 @@ conda activate comet-ray-tune
 
 ## 2. Run the Setup Helper Script
 
-The helper script, `setup.sh` will install Ray in the virtual environment using Python wheels and symlink the `tune` library to the latest version present in the `master` branch of the `ray` repository. This is a tempororary workaround until the next offical `ray` release on PyPi.
-
+The helper script, `setup.sh` will install Ray in the virtual environment
 ```
 chmod +x setup.sh && ./setup.sh
 ```
@@ -35,8 +34,19 @@ The following command will run a hyperparameter sweep using `tune` on the MNIST 
 
 Each Ray `trial_id` will be logged as an individual experiment in Comet.
 
+## Example using the `CometLoggerCallback`
 ```
-python tune_comet_mnist_pytorch_example.py
+python tune_comet_callback.py
+```
+
+## Example using the Ray Functional API
+```
+python tune_comet_functional.py
+```
+
+## Example using the Ray Trainable Class API
+```
+python tune_comet_trainable.py
 ```
 
 # Example Tune Run in Comet

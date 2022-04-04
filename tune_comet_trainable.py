@@ -1,5 +1,9 @@
 # Original Code here:
 # https://github.com/pytorch/examples/blob/master/mnist/main.py
+from __future__ import print_function
+
+import comet_ml
+
 import os
 import argparse
 from filelock import FileLock
@@ -13,12 +17,21 @@ from torchvision import datasets, transforms
 
 import ray
 from ray import tune
-from ray.tune.trial import Trial
-from ray.tune.integration.comet import CometLoggerCallback
+from ray.tune.schedulers import ASHAScheduler
 
 # Change these values if you want the training to run quicker or slower.
 EPOCH_SIZE = 512
 TEST_SIZE = 256
+
+# Training settings
+parser = argparse.ArgumentParser(description="PyTorch MNIST Example")
+parser.add_argument(
+    "--use-gpu", action="store_true", default=False, help="enables CUDA training"
+)
+parser.add_argument("--ray-address", type=str, help="The Redis address of the cluster.")
+parser.add_argument(
+    "--smoke-test", action="store_true", help="Finish quickly for testing"
+)
 
 
 class ConvNet(nn.Module):
@@ -32,22 +45,6 @@ class ConvNet(nn.Module):
         x = x.view(-1, 192)
         x = self.fc(x)
         return F.log_softmax(x, dim=1)
-
-
-class CometLogger(CometLoggerCallback):
-    """Override Log Trial Save to save checkpoints as assets.
-    This method can be modified to save checkpoints either as models
-    or Artifacts depending on the use case.
-
-    Args:
-        CometLoggerCallback (_type_): _description_
-    """
-
-    def log_trial_save(self, trial: "Trial"):
-        iteration = trial.last_result["training_iteration"]
-        experiment = self._trial_experiments[trial]
-        checkpoint_dir = trial.checkpoint.value
-        experiment.log_asset_folder(checkpoint_dir, step=iteration)
 
 
 def train(model, optimizer, train_loader, device=None):
@@ -108,70 +105,64 @@ def get_data_loaders():
     return train_loader, test_loader
 
 
-def train_mnist(config):
-    epochs = 10
-    use_cuda = torch.cuda.is_available()
-    device = torch.device("cuda" if use_cuda else "cpu")
-    train_loader, test_loader = get_data_loaders()
-    model = ConvNet().to(device)
+# Below comments are for documentation purposes only.
+# fmt: off
+# __trainable_example_begin__
+class TrainMNIST(tune.Trainable):
+    def setup(self, config):
+        self.experiment = comet_ml.Experiment(parse_args=False)
 
-    optimizer = optim.SGD(
-        model.parameters(), lr=config["lr"], momentum=config["momentum"]
-    )
+        self.experiment.log_parameters(config)
+        self.experiment.add_tag("tune-trainable")
+        self.experiment.log_others({"trial_id": self.trial_id, "trial_name": self.trial_name})
 
-    for epoch in range(1, epochs + 1):
-        # Use range starting from 1 for step since Ray starts from step 1
-        train(model, optimizer, train_loader, device)
-        acc = test(model, test_loader, device)
+        use_cuda = config.get("use_gpu") and torch.cuda.is_available()
+        self.device = torch.device("cuda" if use_cuda else "cpu")
+        self.train_loader, self.test_loader = get_data_loaders()
+        self.model = ConvNet().to(self.device)
+        self.optimizer = optim.SGD(
+            self.model.parameters(),
+            lr=config.get("lr", 0.01),
+            momentum=config.get("momentum", 0.9))
 
-        # Ray recommends calling checkpoint before tune.report
-        # to keep checkpoint in sync
-        with tune.checkpoint_dir(step=epoch) as checkpoint_dir:
-            path = os.path.join(checkpoint_dir, "model.pth")
-            torch.save(model.state_dict(), path)
+    def step(self):
+        train(
+            self.model, self.optimizer, self.train_loader, device=self.device)
+        acc = test(self.model, self.test_loader, self.device)
+        result = {"mean_accuracy": acc}
+        self.experiment.log_metrics(result, step=self._iteration)
 
-        tune.report(mean_accuracy=acc)
+        return result
 
+    def save_checkpoint(self, checkpoint_dir):
+        checkpoint_path = os.path.join(checkpoint_dir, "model.pth")
+        torch.save(self.model.state_dict(), checkpoint_path)
+        self.experiment.log_asset(checkpoint_path, step=self._iteration)
+
+        return checkpoint_path
+
+    def load_checkpoint(self, checkpoint_path):
+        self.model.load_state_dict(torch.load(checkpoint_path))
+
+    def cleanup(self):
+        self.experiment.end()
+
+# __trainable_example_end__
+# fmt: on
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="PyTorch MNIST Example")
-    parser.add_argument(
-        "--cuda", action="store_true", default=False, help="Enables GPU training"
-    )
-    parser.add_argument(
-        "--smoke-test", action="store_true", help="Finish quickly for testing"
-    )
-    parser.add_argument(
-        "--ray-address",
-        help="Address of Ray cluster for seamless distributed execution.",
-    )
-    parser.add_argument(
-        "--server-address",
-        type=str,
-        default=None,
-        required=False,
-        help="The address of server to connect to if using " "Ray Client.",
-    )
-    args, _ = parser.parse_known_args()
-
-    if args.server_address:
-        ray.init(f"ray://{args.server_address}")
-    elif args.ray_address:
-        ray.init(address=args.ray_address)
-    else:
-        ray.init()
-
-    # Create the Comet Logger and add tags to the tune runs to organize the experiments.
-    logger = CometLogger(log_env_cpu=True, tags=["my-sweep"])
+    args = parser.parse_args()
+    ray.init(local_mode=True)
     analysis = tune.run(
-        train_mnist,
-        local_dir="./results",
-        checkpoint_at_end=False,
+        TrainMNIST,
         metric="mean_accuracy",
         mode="max",
-        name="exp",
-        callbacks=[logger],
-        resources_per_trial={"cpu": 1, "gpu": int(args.cuda)},  # set this for GPUs
+        stop={
+            "mean_accuracy": 0.95,
+            "training_iteration": 10,
+        },
+        resources_per_trial={"cpu": 2, "gpu": int(args.use_gpu)},
+        checkpoint_freq=1,
         num_samples=1,
         config={
             "lr": tune.grid_search([1e-4, 1e-2]),
