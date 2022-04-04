@@ -168,6 +168,7 @@ if __name__ == "__main__":
         parse_args=False,
         tags=["tune-logger-callback"],
     )
+
     analysis = tune.run(
         train_mnist,
         local_dir="./results",

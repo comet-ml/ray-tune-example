@@ -12,8 +12,8 @@ conda activate comet-ray-tune
 ```
 
 ## 2. Run the Setup Helper Script
-
 The helper script, `setup.sh` will install Ray in the virtual environment
+
 ```
 chmod +x setup.sh && ./setup.sh
 ```
